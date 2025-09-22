@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>IP 白名单 - WAF 系统</title>
+    <link rel="stylesheet" href="css/main.css?v=3">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+<div class="top-nav">
+    <div class="logo">WAF控制台</div>
+    <div class="hamburger" id="hamburger">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+</div>
+<div class="container">
+    <!-- 侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>导航菜单</h2>
+        </div>
+        <nav>
+            <a href="dashboard.html"><i class="fas fa-home"></i> 仪表盘</a>
+            <a href="logs.html"><i class="fas fa-file-alt"></i> 防护日志</a>
+            <a href="rules.html"><i class="fas fa-home"></i> 规则管理</a>
+            <a href="ip-blacklist.html"><i class="fas fa-ban"></i> IP 黑名单</a>
+            <a href="ip-whitelist.html" class="active"><i class="fas fa-check-circle"></i> IP 白名单</a>
+            <a href="users.html"><i class="fas fa-users"></i> 用户管理</a>
+            <a href="login.html"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+        </nav>
+    </div>
+
+    <!-- 主内容 -->
+    <main class="main-content">
+        <div class="card">
+            <h3><i class="fas fa-check-circle"></i> 白名单管理</h3>
+            <div class="button-group">
+                <button class="btn btn-primary" id="addWhitelistBtn"><i class="fas fa-plus"></i> 添加 IP</button>
+                <button class="btn btn-secondary" id="refreshWhitelistBtn"><i class="fas fa-sync"></i> 刷新</button>
+            </div>
+
+            <!-- 添加 IP 表单（默认隐藏） -->
+            <div class="card" id="addWhitelistForm" style="display:none; margin-top:20px;">
+                <h4>添加到白名单</h4>
+                <form id="whitelistForm">
+                    <label>
+                        IP 或 CIDR:
+                        <input type="text" id="whitelistIp" required placeholder="如 1.2.3.4 或 10.0.0.0/8">
+                    </label>
+                    <br>
+                    <label>
+                        备注:
+                        <input type="text" id="whitelistRemark" placeholder="可选，例：可信合作方">
+                    </label>
+                    <br>
+                    <label>
+                        有效时长 (秒，0=永久):
+                        <input type="number" id="whitelistDuration" value="0" min="0">
+                    </label>
+                    <br>
+                    <button type="submit" class="btn btn-primary">提交</button>
+                    <button type="button" class="btn btn-secondary" id="cancelAddWhitelist">取消</button>
+                </form>
+            </div>
+
+            <!-- 表格 -->
+            <div class="table-container">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>IP 地址</th>
+                        <th>备注</th>
+                        <th>到期时间</th>
+                        <th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="whitelistTableBody">
+                    <tr><td colspan="4">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- 屏幕尺寸指示器（仅用于演示） -->
+<div class="screen-size" id="screenSize">屏幕宽度: <span id="width"></span>px</div>
+
+<script>
+    const hamburger = document.getElementById('hamburger');
+    const sidebar = document.getElementById('sidebar');
+    hamburger.addEventListener('click', () => {
+        hamburger.classList.toggle('active');
+        sidebar.classList.toggle('active');
+    });
+
+    // 屏幕尺寸指示
+    function updateScreenSize() {
+        const width = window.innerWidth;
+        let message = width < 480 ? " (超小屏幕)" :
+            width < 768 ? " (小屏幕)" :
+                width < 1000 ? " (中等屏幕)" : " (大屏幕)";
+        document.getElementById('width').textContent = width + message;
+    }
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+
+    // API 基础路径
+    const API_BASE = "/api/ip-whitelist";
+
+    // 获取白名单列表
+    async function fetchWhitelist() {
+        const res = await fetch(API_BASE);
+        const data = await res.json();
+        const tbody = document.getElementById("whitelistTableBody");
+        tbody.innerHTML = "";
+        if (data.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='4'>暂无数据</td></tr>";
+            return;
+        }
+        data.forEach(item => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${item.ip}</td>
+                <td>${item.remark || ""}</td>
+                <td>${item.expireAt || "永久"}</td>
+                <td><button class="btn btn-secondary" onclick="removeWhitelist('${encodeURIComponent(item.ip)}')">
+                    <i class="fas fa-trash"></i> 移除
+                </button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // 添加白名单
+    document.getElementById("addWhitelistBtn").addEventListener("click", () => {
+        document.getElementById("addWhitelistForm").style.display = "block";
+    });
+    document.getElementById("cancelAddWhitelist").addEventListener("click", () => {
+        document.getElementById("addWhitelistForm").style.display = "none";
+    });
+    document.getElementById("whitelistForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const newEntry = {
+            ip: document.getElementById("whitelistIp").value,
+            remark: document.getElementById("whitelistRemark").value,
+            duration: parseInt(document.getElementById("whitelistDuration").value)
+        };
+        await fetch(API_BASE, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(newEntry)
+        });
+        fetchWhitelist();
+        e.target.reset();
+        document.getElementById("addWhitelistForm").style.display = "none";
+    });
+
+    // 移除白名单
+    async function removeWhitelist(ip) {
+        await fetch(`${API_BASE}/${ip}`, { method: "DELETE" });
+        fetchWhitelist();
+    }
+
+    // 刷新
+    document.getElementById("refreshWhitelistBtn").addEventListener("click", fetchWhitelist);
+
+    // 初始加载
+    fetchWhitelist();
+</script>
+</body>
+</html>

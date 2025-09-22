@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>IP 黑名单 - WAF 系统</title>
+    <link rel="stylesheet" href="css/main.css?v=3">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+<div class="top-nav">
+    <div class="logo">WAF控制台</div>
+    <div class="hamburger" id="hamburger">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+</div>
+<div class="container">
+    <!-- 侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>导航菜单</h2>
+        </div>
+        <nav>
+            <a href="dashboard.html"><i class="fas fa-home"></i> 仪表盘</a>
+            <a href="logs.html"><i class="fas fa-file-alt"></i> 防护日志</a>
+            <a href="rules.html"><i class="fas fa-home"></i> 规则管理</a>
+            <a href="ip-blacklist.html" class="active"><i class="fas fa-ban"></i> IP 黑名单</a>
+            <a href="ip-whitelist.html"><i class="fas fa-check-circle"></i> IP 白名单</a>
+            <a href="users.html"><i class="fas fa-users"></i> 用户管理</a>
+            <a href="login.html"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+        </nav>
+    </div>
+
+    <!-- 主内容区域 -->
+    <div class="main-content">
+        <div class="card">
+            <h3><i class="fas fa-ban"></i> 黑名单管理</h3>
+            <div class="button-group">
+                <button class="btn btn-primary" id="addIpBtn"><i class="fas fa-plus"></i> 新建规则</button>
+                <button class="btn btn-secondary" id="refreshBtn"><i class="fas fa-sync"></i> 刷新规则</button>
+            </div>
+
+            <!-- 新建规则表单（默认隐藏） -->
+            <div id="addIpForm" style="display:none; margin-top:15px;">
+                <form id="ipForm">
+                    <label>IP / CIDR: <input type="text" id="ip" required></label><br>
+                    <label>备注: <input type="text" id="remark"></label><br>
+                    <label>封禁时长 (秒，0=永久): <input type="number" id="duration" value="0" min="0"></label><br>
+                    <button type="submit" class="btn btn-primary">提交</button>
+                    <button type="button" class="btn btn-secondary" id="cancelAddIp">取消</button>
+                </form>
+            </div>
+
+            <!-- 表格 -->
+            <div class="table-container" style="margin-top:15px;">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>IP 地址</th>
+                        <th>备注</th>
+                        <th>到期时间</th>
+                        <th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="ipTableBody">
+                    <!-- 数据动态填充 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 屏幕尺寸指示器 -->
+<div class="screen-size" id="screenSize">屏幕宽度: <span id="width"></span>px</div>
+
+<script>
+    // ======================
+    // 汉堡菜单功能
+    // ======================
+    const hamburger = document.getElementById('hamburger');
+    const sidebar = document.getElementById('sidebar');
+    hamburger.addEventListener('click', () => {
+        hamburger.classList.toggle('active');
+        sidebar.classList.toggle('active');
+    });
+
+    // ======================
+    // 屏幕尺寸显示
+    // ======================
+    function updateScreenSize() {
+        const width = window.innerWidth;
+        let message = "";
+        if (width < 480) message = " (超小屏幕)";
+        else if (width < 768) message = " (小屏幕)";
+        else if (width < 1000) message = " (中等屏幕)";
+        else message = " (大屏幕)";
+        document.getElementById('width').textContent = width + message;
+    }
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+
+    // ======================
+    // 黑名单接口交互
+    // ======================
+    async function fetchBlacklist() {
+        const res = await fetch('/api/ip-blacklist');
+        const data = await res.json();
+        populateTable(data);
+    }
+
+    function populateTable(list) {
+        const tbody = document.getElementById('ipTableBody');
+        tbody.innerHTML = "";
+        list.forEach(entry => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${entry.ip}</td>
+                <td>${entry.remark || '-'}</td>
+                <td>${entry.expireAt || '永久'}</td>
+                <td>
+                    <button class="btn btn-danger" onclick="removeIp('${encodeURIComponent(entry.ip)}')">
+                        <i class="fas fa-trash"></i> 移除
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function addIp(e) {
+        e.preventDefault();
+        const ip = document.getElementById('ip').value.trim();
+        const remark = document.getElementById('remark').value.trim();
+        const duration = parseInt(document.getElementById('duration').value);
+
+        if (!ip) {
+            alert("请输入 IP 或 CIDR");
+            return;
+        }
+
+        const newEntry = { ip, remark, duration };
+
+        await fetch('/api/ip-blacklist', {
+            method: 'POST',
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newEntry)
+        });
+
+        document.getElementById('ipForm').reset();
+        document.getElementById('addIpForm').style.display = 'none';
+        fetchBlacklist();
+    }
+
+    async function removeIp(ip) {
+        if (!confirm("确认移除该 IP / CIDR 吗？")) return;
+        await fetch(`/api/ip-blacklist/${ip}`, { method: 'DELETE' });
+        fetchBlacklist();
+    }
+
+    // ======================
+    // 事件绑定
+    // ======================
+    document.getElementById('addIpBtn').addEventListener('click', () => {
+        document.getElementById('addIpForm').style.display = 'block';
+    });
+    document.getElementById('cancelAddIp').addEventListener('click', () => {
+        document.getElementById('addIpForm').style.display = 'none';
+    });
+    document.getElementById('ipForm').addEventListener('submit', addIp);
+    document.getElementById('refreshBtn').addEventListener('click', fetchBlacklist);
+
+    // ======================
+    // 页面初始化
+    // ======================
+    fetchBlacklist();
+</script>
+</body>
+</html>

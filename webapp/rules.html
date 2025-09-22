@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>规则管理 - WAF 系统</title>
+    <link rel="stylesheet" href="css/main.css?v=4">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+<div class="top-nav">
+    <div class="logo">WAF控制台</div>
+    <div class="hamburger" id="hamburger">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>导航菜单</h2>
+        </div>
+        <nav>
+            <a href="dashboard.html"><i class="fas fa-home"></i> 仪表盘</a>
+            <a href="logs.html"><i class="fas fa-file-alt"></i> 防护日志</a>
+            <a href="rules.html" class="active"><i class="fas fa-home"></i> 规则管理</a>
+            <a href="ip-blacklist.html"><i class="fas fa-ban"></i> IP 黑名单</a>
+            <a href="ip-whitelist.html"><i class="fas fa-check-circle"></i> IP 白名单</a>
+            <a href="users.html"><i class="fas fa-users"></i> 用户管理</a>
+            <a href="login.html"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <div class="card">
+            <h3><i class="fas fa-list"></i> 规则列表</h3>
+            <div class="button-group">
+                <button class="btn btn-primary" id="addRuleBtn"><i class="fas fa-plus"></i> 新建规则</button>
+                <button class="btn btn-secondary" id="refreshBtn"><i class="fas fa-sync"></i> 刷新规则</button>
+            </div>
+
+            <!-- 筛选条件 -->
+            <div style="margin: 10px 0;">
+                <label>
+                    启用状态:
+                    <select id="filterStatus">
+                        <option value="">全部</option>
+                        <option value="true">启用</option>
+                        <option value="false">禁用</option>
+                    </select>
+                </label>
+                <label>
+                    类型:
+                    <select id="filterType">
+                        <option value="">全部</option>
+                        <option value="CORE">CORE</option>
+                        <option value="USER">USER</option>
+                    </select>
+                </label>
+                <button class="btn btn-secondary" id="filterBtn">筛选</button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                    <tr>
+                        <th width="10%">ID</th>
+                        <th width="15%">规则类型</th>
+                        <th width="50%">规则描述</th>
+                        <th width="25%">动作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="ruleTableBody">
+                    <!-- 数据动态填充 -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 分页 -->
+            <div style="margin-top: 10px;">
+                <button class="btn btn-secondary" id="prevPage">上一页</button>
+                <span id="pageInfo">第 1 页</span>
+                <button class="btn btn-secondary" id="nextPage">下一页</button>
+            </div>
+        </div>
+
+        <!-- 新建规则表单（默认隐藏） -->
+        <div class="card" id="addRuleForm" style="display:none; margin-top:20px;">
+            <h3><i class="fas fa-plus"></i> 新建规则</h3>
+            <form id="ruleForm">
+                <label>规则描述: <input type="text" id="ruleDescription" required></label><br>
+                <label>匹配模式: <input type="text" id="rulePattern" required></label><br>
+                <label>目标字段:
+                    <select id="ruleTarget">
+                        <option value="ALL_PARAMS">ALL_PARAMS</option>
+                        <option value="URL">URL</option>
+                        <option value="HEADER">HEADER</option>
+                        <option value="BODY">BODY</option>
+                    </select>
+                </label><br>
+                <label>匹配类型:
+                    <select id="ruleMatchType">
+                        <option value="REGEX">正则匹配</option>
+                        <option value="CONTAINS">包含</option>
+                        <option value="EQUALS">等于</option>
+                    </select>
+                </label><br>
+                <label>动作:
+                    <select id="ruleAction">
+                        <option value="DENY">拒绝</option>
+                        <option value="ALLOW">允许</option>
+                        <option value="LOG">仅记录</option>
+                    </select>
+                </label><br>
+                <label>分数: <input type="number" id="ruleScore" value="50" min="0" max="100"></label><br>
+                <label>忽略大小写: <input type="checkbox" id="ruleCaseless" checked></label><br>
+                <label>启用状态: <input type="checkbox" id="ruleIsActive" checked></label><br>
+                <button type="submit" class="btn btn-primary">提交</button>
+                <button type="button" class="btn btn-secondary" id="cancelAddRule">取消</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 屏幕尺寸指示器 -->
+<div class="screen-size" id="screenSize">屏幕宽度: <span id="width"></span>px</div>
+
+<script>
+    // ==========================
+    // 汉堡菜单
+    // ==========================
+    const hamburger = document.getElementById('hamburger');
+    const sidebar = document.getElementById('sidebar');
+    hamburger.addEventListener('click', () => {
+        hamburger.classList.toggle('active');
+        sidebar.classList.toggle('active');
+    });
+
+    // ==========================
+    // 屏幕尺寸显示
+    // ==========================
+    function updateScreenSize() {
+        const width = window.innerWidth;
+        let message = "";
+        if (width < 480) message = " (超小屏幕)";
+        else if (width < 768) message = " (小屏幕)";
+        else if (width < 1000) message = " (中等屏幕)";
+        else message = " (大屏幕)";
+        document.getElementById('width').textContent = width + message;
+    }
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+
+    // ==========================
+    // 规则列表逻辑
+    // ==========================
+    let currentPage = 1;
+    const limit = 10;
+
+    async function fetchRules(page = 1) {
+        const isActive = document.getElementById('filterStatus').value;
+        const type = document.getElementById('filterType').value;
+
+        const params = new URLSearchParams({page, limit});
+        if (isActive !== "") params.append("isActive", isActive);
+        if (type !== "") params.append("type", type);
+
+        const res = await fetch(`/api/rules?${params.toString()}`);
+        const data = await res.json();
+        populateTable(data.rules);
+        document.getElementById('pageInfo').textContent = `第 ${page} 页`;
+    }
+
+    function populateTable(rules) {
+        const tbody = document.getElementById('ruleTableBody');
+        tbody.innerHTML = "";
+        rules.forEach(rule => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${rule.id}</td>
+                <td>${rule.type || 'USER'}</td>
+                <td>${rule.description || ''}</td>
+                <td>
+                    <button class="btn btn-secondary" onclick='editRule(${JSON.stringify(rule)})'>
+                        <i class="fas fa-edit"></i> 编辑
+                    </button>
+                    <button class="btn btn-danger" onclick='deleteRule(${rule.id})'>
+                        <i class="fas fa-trash-alt"></i> 删除
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // ==========================
+    // 新建规则表单逻辑
+    // ==========================
+    document.getElementById('addRuleBtn').addEventListener('click', () => {
+        document.getElementById('addRuleForm').style.display = 'block';
+    });
+    document.getElementById('cancelAddRule').addEventListener('click', () => {
+        document.getElementById('addRuleForm').style.display = 'none';
+    });
+    document.getElementById('ruleForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const newRule = {
+            description: document.getElementById('ruleDescription').value,
+            pattern: document.getElementById('rulePattern').value,
+            target: document.getElementById('ruleTarget').value,
+            matchType: document.getElementById('ruleMatchType').value,
+            action: document.getElementById('ruleAction').value,
+            score: parseInt(document.getElementById('ruleScore').value),
+            caseless: document.getElementById('ruleCaseless').checked,
+            isActive: document.getElementById('ruleIsActive').checked
+        };
+
+        await fetch('/api/rules', {
+            method: 'POST',
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(newRule)
+        });
+
+        fetchRules(currentPage);
+        document.getElementById('ruleForm').reset();
+        document.getElementById('addRuleForm').style.display = 'none';
+    });
+
+    // ==========================
+    // 编辑/删除逻辑
+    // ==========================
+    async function editRule(rule) {
+        const isActive = confirm("启用该规则？点击取消为禁用");
+        await fetch(`/api/rules/${rule.id}`, {
+            method: 'PUT',
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({isActive})
+        });
+        fetchRules(currentPage);
+    }
+
+    async function deleteRule(id) {
+        if (!confirm("确认删除该用户自定义规则？")) return;
+        await fetch(`/api/rules/${id}`, {method: 'DELETE'});
+        fetchRules(currentPage);
+    }
+
+    // ==========================
+    // 其他按钮事件
+    // ==========================
+    document.getElementById('refreshBtn').addEventListener('click', () => fetchRules(currentPage));
+    document.getElementById('filterBtn').addEventListener('click', () => fetchRules(1));
+    document.getElementById('prevPage').addEventListener('click', () => {
+        if (currentPage > 1) currentPage--; fetchRules(currentPage);
+    });
+    document.getElementById('nextPage').addEventListener('click', () => { currentPage++; fetchRules(currentPage); });
+
+    // 页面初始加载
+    fetchRules(currentPage);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>用户管理 - WAF 系统</title>
+    <link rel="stylesheet" href="css/main.css?v=3">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+<div class="top-nav">
+    <div class="logo">WAF控制台</div>
+    <div class="hamburger" id="hamburger">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+</div>
+<div class="container">
+    <!-- 侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>导航菜单</h2>
+        </div>
+        <nav>
+            <a href="dashboard.html"><i class="fas fa-home"></i> 仪表盘</a>
+            <a href="logs.html"><i class="fas fa-file-alt"></i> 防护日志</a>
+            <a href="rules.html" ><i class="fas fa-home"></i> 规则管理</a>
+            <a href="ip-blacklist.html"><i class="fas fa-ban"></i> IP 黑名单</a>
+            <a href="ip-whitelist.html"><i class="fas fa-check-circle"></i> IP 白名单</a>
+            <a href="users.html" class="active"><i class="fas fa-users"></i> 用户管理</a>
+            <a href="login.html"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+        </nav>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+
+        <!-- 系统健康状态卡片 -->
+        <div class="card" id="healthCard" style="margin-bottom:20px;">
+            <h3><i class="fas fa-heartbeat"></i> 系统健康状态</h3>
+            <div id="healthContent">加载中...</div>
+        </div>
+
+        <div class="card">
+            <h3><i class="fas fa-users"></i> 用户管理</h3>
+            <div class="button-group">
+                <button class="btn btn-primary" id="addUserBtn"><i class="fas fa-user-plus"></i> 新建用户</button>
+                <button class="btn btn-secondary" id="refreshUserBtn"><i class="fas fa-sync"></i> 刷新</button>
+            </div>
+
+            <!-- 新建用户表单 -->
+            <div class="card" id="addUserForm" style="display:none; margin-top:20px;">
+                <h4>新建用户</h4>
+                <form id="userForm">
+                    <label>用户名: <input type="text" id="username" required></label><br>
+                    <label>密码: <input type="password" id="password" required></label><br>
+                    <label>角色:
+                        <select id="role">
+                            <option value="admin">管理员</option>
+                            <option value="operator">操作员</option>
+                            <option value="user">普通用户</option>
+                        </select>
+                    </label><br>
+                    <button type="submit" class="btn btn-primary">提交</button>
+                    <button type="button" class="btn btn-secondary" id="cancelAddUser">取消</button>
+                </form>
+            </div>
+
+            <!-- 编辑用户表单 -->
+            <div class="card" id="editUserForm" style="display:none; margin-top:20px;">
+                <h4>编辑用户</h4>
+                <form id="editForm">
+                    <input type="hidden" id="editUserId">
+                    <label>新密码: <input type="password" id="editPassword" placeholder="留空则不修改"></label><br>
+                    <label>角色:
+                        <select id="editRole">
+                            <option value="admin">管理员</option>
+                            <option value="operator">操作员</option>
+                            <option value="user">普通用户</option>
+                        </select>
+                    </label><br>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                    <button type="button" class="btn btn-secondary" id="cancelEditUser">取消</button>
+                </form>
+            </div>
+
+            <!-- 用户表格 -->
+            <div class="table-container">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>用户名</th>
+                        <th>角色</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                    <tr><td colspan="5">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 屏幕尺寸指示器 -->
+<div class="screen-size" id="screenSize">屏幕宽度: <span id="width"></span>px</div>
+
+<script>
+    // 汉堡菜单
+    const hamburger = document.getElementById('hamburger');
+    const sidebar = document.getElementById('sidebar');
+    hamburger.addEventListener('click', () => {
+        hamburger.classList.toggle('active');
+        sidebar.classList.toggle('active');
+    });
+
+    // 屏幕尺寸
+    function updateScreenSize() {
+        const width = window.innerWidth;
+        let message = width < 480 ? " (超小屏幕)" :
+            width < 768 ? " (小屏幕)" :
+                width < 1000 ? " (中等屏幕)" : " (大屏幕)";
+        document.getElementById('width').textContent = width + message;
+    }
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+
+    const API_USERS = "/api/users";
+    const API_HEALTH = "/api/health";
+
+    // ========================
+    // 系统健康状态
+    // ========================
+    async function fetchHealth() {
+        try {
+            const res = await fetch(API_HEALTH);
+            const data = await res.json();
+            document.getElementById("healthContent").innerHTML = `
+                系统状态: <b>${data.system}</b> |
+                WAF模块: <b>${data.wafModule}</b> |
+                更新时间: ${new Date(data.timestamp).toLocaleString()}
+            `;
+        } catch (e) {
+            document.getElementById("healthContent").textContent = "获取失败";
+        }
+    }
+    fetchHealth();
+    // 每30秒刷新一次
+    setInterval(fetchHealth, 30000);
+
+    // ========================
+    // 用户管理
+    // ========================
+    async function fetchUsers() {
+        const res = await fetch(API_USERS);
+        const data = await res.json();
+        const tbody = document.getElementById("userTableBody");
+        tbody.innerHTML = "";
+        if (!data.length) {
+            tbody.innerHTML = "<tr><td colspan='5'>暂无数据</td></tr>";
+            return;
+        }
+        data.forEach(user => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${user.id}</td>
+                <td>${user.username}</td>
+                <td>${user.role}</td>
+                <td>${user.createdAt}</td>
+                <td>
+                    <button class="btn btn-secondary" onclick="editUser(${user.id}, '${user.role}')">
+                        <i class="fas fa-edit"></i> 编辑
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // 新建用户
+    document.getElementById("addUserBtn").addEventListener("click", () => {
+        document.getElementById("addUserForm").style.display = "block";
+    });
+    document.getElementById("cancelAddUser").addEventListener("click", () => {
+        document.getElementById("addUserForm").style.display = "none";
+    });
+    document.getElementById("userForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const newUser = {
+            username: document.getElementById("username").value,
+            password: document.getElementById("password").value,
+            role: document.getElementById("role").value
+        };
+        await fetch(API_USERS, {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify(newUser)
+        });
+        fetchUsers();
+        e.target.reset();
+        document.getElementById("addUserForm").style.display = "none";
+    });
+
+    // 编辑用户
+    function editUser(id, role) {
+        document.getElementById("editUserId").value = id;
+        document.getElementById("editRole").value = role;
+        document.getElementById("editUserForm").style.display = "block";
+    }
+    document.getElementById("cancelEditUser").addEventListener("click", () => {
+        document.getElementById("editUserForm").style.display = "none";
+    });
+    document.getElementById("editForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const id = document.getElementById("editUserId").value;
+        const updated = { role: document.getElementById("editRole").value };
+        const pwd = document.getElementById("editPassword").value;
+        if (pwd) updated.password = pwd;
+        await fetch(`${API_USERS}/${id}`, {
+            method: "PUT",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify(updated)
+        });
+        fetchUsers();
+        e.target.reset();
+        document.getElementById("editUserForm").style.display = "none";
+    });
+
+    // 刷新
+    document.getElementById("refreshUserBtn").addEventListener("click", fetchUsers);
+
+    // 初始加载
+    fetchUsers();
+</script>
+</body>
+</html>

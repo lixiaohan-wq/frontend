@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>防护日志 - WAF 系统</title>
+    <link rel="stylesheet" href="css/main.css?v=4">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+<div class="top-nav">
+    <div class="logo">WAF控制台</div>
+    <div class="hamburger" id="hamburger">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>导航菜单</h2>
+        </div>
+        <nav>
+            <a href="dashboard.html"><i class="fas fa-home"></i> 仪表盘</a>
+            <a href="logs.html" class="active"><i class="fas fa-file-alt"></i> 防护日志</a>
+            <a href="rules.html"><i class="fas fa-list"></i> 规则管理</a>
+            <a href="ip-blacklist.html"><i class="fas fa-ban"></i> IP 黑名单</a>
+            <a href="ip-whitelist.html"><i class="fas fa-check-circle"></i> IP 白名单</a>
+            <a href="users.html"><i class="fas fa-users"></i> 用户管理</a>
+            <a href="login.html"><i class="fas fa-sign-out-alt"></i> 退出登录</a>
+        </nav>
+    </div>
+
+    <!-- 主内容区域 -->
+    <div class="main-content">
+        <div class="dashboard-header">
+            <h1>防护日志</h1>
+            <p>系统安全拦截记录与状态监控</p>
+        </div>
+
+        <div class="stats-cards">
+            <div class="stat-card">
+                <h3>今日拦截攻击</h3>
+                <div class="value" id="todayIntercept">124</div>
+            </div>
+            <div class="stat-card">
+                <h3>本周总拦截数</h3>
+                <div class="value" id="weekIntercept">842</div>
+            </div>
+            <div class="stat-card">
+                <h3>恶意IP数量</h3>
+                <div class="value" id="maliciousIP">67</div>
+            </div>
+        </div>
+
+        <!-- 筛选条件 -->
+        <div class="log-filters">
+            <h2>筛选日志</h2>
+            <input type="text" id="filterIp" placeholder="攻击源IP">
+            <input type="text" id="filterAttackType" placeholder="攻击类型">
+            <input type="text" id="filterUrl" placeholder="请求URL">
+            <input type="number" id="filterRuleId" placeholder="规则ID">
+            <input type="datetime-local" id="filterStartTime">
+            <input type="datetime-local" id="filterEndTime">
+            <button class="btn btn-primary" id="btnFilter">筛选</button>
+        </div>
+
+        <!-- 日志列表 -->
+        <ul class="activity-list" id="logList">
+            <!-- 日志由 JS 渲染 -->
+        </ul>
+
+        <!-- 分页 -->
+        <div class="pagination">
+            <button class="btn btn-secondary" id="prevPage">上一页</button>
+            <span id="currentPage">1</span>
+            <button class="btn btn-secondary" id="nextPage">下一页</button>
+        </div>
+    </div>
+</div>
+
+<!-- 屏幕尺寸指示器 -->
+<div class="screen-size" id="screenSize">屏幕宽度: <span id="width"></span>px</div>
+
+<script>
+    // 汉堡菜单功能
+    const hamburger = document.getElementById('hamburger');
+    const sidebar = document.getElementById('sidebar');
+    hamburger.addEventListener('click', () => {
+        hamburger.classList.toggle('active');
+        sidebar.classList.toggle('active');
+    });
+
+    // 更新屏幕尺寸显示
+    function updateScreenSize() {
+        const width = window.innerWidth;
+        let message = "";
+        if(width<480) message=" (超小屏幕)";
+        else if(width<768) message=" (小屏幕)";
+        else if(width<1000) message=" (中等屏幕)";
+        else message=" (大屏幕)";
+        document.getElementById('width').textContent = width + message;
+    }
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+
+    // 日志功能
+    (async function(){
+        const logList = document.getElementById('logList');
+        const btnFilter = document.getElementById('btnFilter');
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
+        const currentPageEl = document.getElementById('currentPage');
+
+        let page = 1;
+        const limit = 10;
+
+        async function fetchLogs(){
+            const params = new URLSearchParams();
+            params.append('page', page);
+            params.append('limit', limit);
+            if(document.getElementById('filterIp').value) params.append('ip', document.getElementById('filterIp').value);
+            if(document.getElementById('filterAttackType').value) params.append('attackType', document.getElementById('filterAttackType').value);
+            if(document.getElementById('filterUrl').value) params.append('url', document.getElementById('filterUrl').value);
+            if(document.getElementById('filterRuleId').value) params.append('ruleId', document.getElementById('filterRuleId').value);
+            if(document.getElementById('filterStartTime').value) params.append('startTime', new Date(document.getElementById('filterStartTime').value).getTime());
+            if(document.getElementById('filterEndTime').value) params.append('endTime', new Date(document.getElementById('filterEndTime').value).getTime());
+
+            try{
+                const resp = await fetch(`/api/logs?${params.toString()}`,{
+                    headers:{'Authorization': `Bearer ${localStorage.getItem('accessToken')}`}
+                });
+                const data = await resp.json();
+                renderLogs(data.logs || []);
+                currentPageEl.textContent = page;
+            }catch(err){
+                console.error(err);
+                logList.innerHTML = '<li class="activity-item error">无法加载日志</li>';
+            }
+        }
+
+        function renderLogs(logs){
+            logList.innerHTML = '';
+            logs.forEach(log=>{
+                const li = document.createElement('li');
+                li.className = `activity-item ${log.attackType?'error':'success'}`;
+                li.innerHTML = `
+                    <strong>${log.attackType? log.attackType+'攻击已拦截':'正常请求已允许'}</strong>
+                    <p>${log.ip || ''} -> ${log.url || ''} ${log.ruleId? '规则 #'+log.ruleId : ''}</p>
+                    <small>${new Date(log.time).toLocaleString()}</small>
+                    ${log.id? `<button class="btn btn-secondary btn-sm delete-log" data-id="${log.id}">删除</button>`: ''}
+                `;
+                logList.appendChild(li);
+            });
+
+            // 删除事件
+            document.querySelectorAll('.delete-log').forEach(btn=>{
+                btn.addEventListener('click', async function(){
+                    const id = this.dataset.id;
+                    if(!confirm('确认删除此日志?')) return;
+                    try{
+                        const resp = await fetch(`/api/logs/${id}`,{ method:'DELETE', headers:{
+                                'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                            }});
+                        if(resp.ok) fetchLogs();
+                        else alert('删除失败');
+                    }catch(err){ console.error(err); alert('删除失败'); }
+                });
+            });
+        }
+
+        btnFilter.addEventListener('click', ()=>{ page=1; fetchLogs(); });
+        prevPage.addEventListener('click', ()=>{ if(page>1){ page--; fetchLogs(); } });
+        nextPage.addEventListener('click', ()=>{ page++; fetchLogs(); });
+
+        // 首次加载
+        fetchLogs();
+    })();
+</script>
+</body>
+</html>
